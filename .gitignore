@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.webp
+geminigen_session.json
+geminigen_last_video.json
+geminigen_*.json
+.env
+.venv/
+venv/
