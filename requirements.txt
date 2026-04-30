@@ -1,0 +1,2 @@
+requests>=2.31.0
+undetected-chromedriver>=3.5.5

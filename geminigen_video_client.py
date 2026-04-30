@@ -36,11 +36,12 @@ LOCAL_STORAGE_KEY = "guard_stable_id"
 DEFAULT_BUCKET_MS = 60_000
 DEFAULT_SESSION_CACHE = Path("geminigen_session.json")
 DEFAULT_OUT_JSON = Path("geminigen_last_video.json")
-DEFAULT_CHROME_LEVELDB = Path(os.environ["LOCALAPPDATA"]) / "Google" / "Chrome" / "User Data" / "Default" / "Local Storage" / "leveldb"
+LOCALAPPDATA_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+DEFAULT_CHROME_LEVELDB = LOCALAPPDATA_DIR / "Google" / "Chrome" / "User Data" / "Default" / "Local Storage" / "leveldb"
 DEFAULT_CHROME_BINARY_CANDIDATES = [
     Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
-    Path(os.environ["LOCALAPPDATA"]) / "Google" / "Chrome" / "Application" / "chrome.exe",
+    LOCALAPPDATA_DIR / "Google" / "Chrome" / "Application" / "chrome.exe",
 ]
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -119,6 +120,13 @@ def iter_leveldb_text_files(leveldb_dir: Path) -> Iterable[Path]:
 
 
 def parse_auth_store_from_leveldb(leveldb_dir: Path) -> AuthState:
+    if not leveldb_dir.exists():
+        raise GeminiGenError(
+            f"Chrome Local Storage directory not found: {leveldb_dir}\n"
+            "请先运行 `python geminigen_video_client.py login --extract`，在打开的 Chrome 里登录 GeminiGen，"
+            "登录完成后关闭 Chrome，再回到终端按 Enter 保存会话。"
+        )
+
     auth_candidates: list[dict[str, Any]] = []
     guard_candidates: list[str] = []
     turnstile_candidates: list[str] = []
@@ -156,7 +164,10 @@ def parse_auth_store_from_leveldb(leveldb_dir: Path) -> AuthState:
     if auth_payload is None and auth_candidates:
         auth_payload = auth_candidates[-1]
     if auth_payload is None:
-        raise GeminiGenError(f"Could not extract authStore from {leveldb_dir}")
+        raise GeminiGenError(
+            f"没有从 Chrome 本地缓存中提取到 GeminiGen 登录态：{leveldb_dir}\n"
+            "请运行 `python geminigen_video_client.py login --extract`，登录成功并关闭 Chrome 后再重试。"
+        )
 
     guard_stable_id = None
     for candidate in reversed(guard_candidates):
@@ -190,6 +201,13 @@ def load_auth_state(session_cache: Path | None, chrome_leveldb: Path) -> AuthSta
 
 def save_auth_state(path: Path, auth: AuthState) -> None:
     path.write_text(json.dumps(asdict(auth), indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def open_login_browser() -> None:
+    chrome_binary = find_chrome_binary()
+    if not chrome_binary:
+        raise GeminiGenError("找不到本机 Chrome，请先安装 Google Chrome。")
+    subprocess.Popen([str(chrome_binary), f"{SITE_ORIGIN}/?hard=true"])
 
 
 def jwt_expiry(token: str | None) -> int | None:
@@ -344,10 +362,10 @@ class GeminiGenClient:
 
     def fetch_turnstile_token(self, timeout_seconds: int = 120, max_attempts: int = 3) -> str:
         if uc is None:
-            raise GeminiGenError("undetected-chromedriver is not installed")
+            raise GeminiGenError("未安装 undetected-chromedriver，请先运行 `python -m pip install -r requirements.txt`。")
         chrome_binary = find_chrome_binary()
         if not chrome_binary:
-            raise GeminiGenError("Could not find local Chrome binary")
+            raise GeminiGenError("找不到本机 Chrome，请先安装 Google Chrome。")
 
         options = uc.ChromeOptions()
         options.binary_location = str(chrome_binary)
@@ -737,33 +755,36 @@ return {
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate videos from GeminiGen using the browser login state from local Chrome storage.")
-    parser.add_argument("--session-cache", type=Path, default=DEFAULT_SESSION_CACHE, help=f"Session cache JSON path. Default: {DEFAULT_SESSION_CACHE}")
-    parser.add_argument("--chrome-leveldb", type=Path, default=DEFAULT_CHROME_LEVELDB, help=f"Chrome Local Storage leveldb directory. Default: {DEFAULT_CHROME_LEVELDB}")
+    parser = argparse.ArgumentParser(description="使用本机 Chrome 登录态调用 GeminiGen 生成视频。")
+    parser.add_argument("--session-cache", type=Path, default=DEFAULT_SESSION_CACHE, help=f"会话缓存 JSON 路径，默认：{DEFAULT_SESSION_CACHE}")
+    parser.add_argument("--chrome-leveldb", type=Path, default=DEFAULT_CHROME_LEVELDB, help=f"Chrome Local Storage leveldb 目录，默认：{DEFAULT_CHROME_LEVELDB}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    auth = subparsers.add_parser("auth-info", help="Show the extracted auth state")
-    auth.add_argument("--refresh", action="store_true", help="Refresh the access token before printing")
+    login = subparsers.add_parser("login", help="打开 GeminiGen 登录页，并可在登录后提取本机会话")
+    login.add_argument("--extract", action="store_true", help="登录并关闭 Chrome 后，把鉴权信息提取到会话缓存")
 
-    history = subparsers.add_parser("history", help="Fetch one history item by UUID")
-    history.add_argument("--uuid", required=True, help="History UUID")
+    auth = subparsers.add_parser("auth-info", help="显示当前提取到的登录状态")
+    auth.add_argument("--refresh", action="store_true", help="显示前先刷新 access token")
 
-    generate = subparsers.add_parser("generate", help="Generate a Grok video")
-    generate.add_argument("--prompt", required=True, help="Video prompt")
-    generate.add_argument("--model", default="grok-video", help="Video model. Default: grok-video")
-    generate.add_argument("--aspect-ratio", default="landscape", help="Aspect ratio/orientation. Default: landscape")
-    generate.add_argument("--resolution", default="480p", help="Resolution. Default: 480p")
-    generate.add_argument("--duration", type=int, default=6, help="Duration seconds. Default: 6")
-    generate.add_argument("--mode", help="Optional mode, for example ALLOW_ALL")
-    generate.add_argument("--first-frame", type=Path, help="Optional first-frame image path. Passed as the first uploaded reference file.")
-    generate.add_argument("--file", dest="files", action="append", type=Path, default=[], help="Optional reference file path. Repeatable.")
-    generate.add_argument("--ref-history", action="append", default=[], help="Optional reference history UUID. Repeatable.")
-    generate.add_argument("--include-turnstile", action="store_true", help="Include the latest turnstile token extracted from Chrome local storage.")
-    generate.add_argument("--no-auto-turnstile", action="store_true", help="Disable automatic browser-based Turnstile solving when the API asks for it.")
-    generate.add_argument("--poll-interval", type=int, default=30, help="History polling interval in seconds. Default: 30")
-    generate.add_argument("--timeout", type=int, default=300, help="Overall wait timeout in seconds. Default: 300")
-    generate.add_argument("--out-json", type=Path, default=DEFAULT_OUT_JSON, help=f"Where to save the final JSON. Default: {DEFAULT_OUT_JSON}")
-    generate.add_argument("--download", type=Path, help="Optional local output path for the generated video file")
+    history = subparsers.add_parser("history", help="通过 UUID 查询一个历史任务")
+    history.add_argument("--uuid", required=True, help="历史任务 UUID")
+
+    generate = subparsers.add_parser("generate", help="生成视频")
+    generate.add_argument("--prompt", required=True, help="视频提示词")
+    generate.add_argument("--model", default="grok-video", help="视频模型，默认：grok-video")
+    generate.add_argument("--aspect-ratio", default="landscape", help="画面比例/方向，默认：landscape")
+    generate.add_argument("--resolution", default="480p", help="分辨率，默认：480p")
+    generate.add_argument("--duration", type=int, default=6, help="视频时长秒数，默认：6")
+    generate.add_argument("--mode", help="可选模式，例如 ALLOW_ALL")
+    generate.add_argument("--first-frame", type=Path, help="可选首帧图片路径，会作为第一个参考文件上传")
+    generate.add_argument("--file", dest="files", action="append", type=Path, default=[], help="可选参考文件路径，可重复传入")
+    generate.add_argument("--ref-history", action="append", default=[], help="可选参考历史任务 UUID，可重复传入")
+    generate.add_argument("--include-turnstile", action="store_true", help="请求中携带从 Chrome 本地缓存提取到的最新 Turnstile token")
+    generate.add_argument("--no-auto-turnstile", action="store_true", help="当接口要求 Turnstile 时，禁用自动打开浏览器获取 token")
+    generate.add_argument("--poll-interval", type=int, default=30, help="查询任务状态的间隔秒数，默认：30")
+    generate.add_argument("--timeout", type=int, default=300, help="整体等待超时时间秒数，默认：300")
+    generate.add_argument("--out-json", type=Path, default=DEFAULT_OUT_JSON, help=f"最终 JSON 保存路径，默认：{DEFAULT_OUT_JSON}")
+    generate.add_argument("--download", type=Path, help="可选视频下载保存路径")
 
     return parser
 
@@ -777,6 +798,17 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.command == "login":
+            open_login_browser()
+            print("已在 Chrome 中打开 GeminiGen。")
+            print("请在浏览器里完成登录。登录完成后关闭 Chrome。")
+            if args.extract:
+                input("登录完成并关闭 Chrome 后，按 Enter 继续提取会话...")
+                auth_state = load_auth_state(args.session_cache, args.chrome_leveldb)
+                save_auth_state(args.session_cache, auth_state)
+                print(f"已保存会话缓存：{args.session_cache}")
+            return 0
+
         auth_state = load_auth_state(args.session_cache, args.chrome_leveldb)
         client = GeminiGenClient(auth_state)
 
