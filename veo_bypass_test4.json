@@ -1,0 +1,66 @@
+{
+  "id": 38759229,
+  "uuid": "804d2224-454f-11f1-b6c4-3e28e65f0775",
+  "user_id": 1512620,
+  "model_name": "veo-3-fast",
+  "input_text": "a cat walking",
+  "negative_prompt": null,
+  "generate_result": null,
+  "input_file_path": null,
+  "type": "video",
+  "used_credit": 0,
+  "status": 2,
+  "status_desc": "",
+  "status_percentage": 100,
+  "error_code": "",
+  "error_message": "",
+  "rating": "",
+  "rating_content": "",
+  "custom_prompt": "",
+  "created_at": "2026-05-01T11:18:38",
+  "updated_at": "2026-05-01T11:19:45",
+  "file_size": 0,
+  "expired_at": null,
+  "inference_type": null,
+  "name": null,
+  "created_by": "WEB",
+  "thumbnail_url": "https://cdn.geminigen.ai/thumbnails/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775/804d2224-454f-11f1-b6c4-3e28e65f0775_0_600px.jpg",
+  "thumbnail_urls": [
+    "https://cdn.geminigen.ai/thumbnails/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775/804d2224-454f-11f1-b6c4-3e28e65f0775_0_600px.jpg"
+  ],
+  "last_frame_url": "https://cdn.geminigen.ai/last_frames/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775_last_frame.jpg",
+  "queue_position": 1,
+  "delay_seconds": 0,
+  "story_board_config": null,
+  "generated_video": [
+    {
+      "id": 30502770,
+      "uuid": "80631188-454f-11f1-b6c4-3e28e65f0775",
+      "history_id": 38759229,
+      "video_uri": "1512620/generated_result/video/804d2224-454f-11f1-b6c4-3e28e65f0775/20260501_111839_0_UTC_0.mp4",
+      "video_url": "https://87c129bea46e5e69d2d92f9b9ef83ca8.r2.cloudflarestorage.com/geminigen-prd-upload-bucket/1512620/generated_result/video/804d2224-454f-11f1-b6c4-3e28e65f0775/20260501_111839_0_UTC_0.mp4?response-content-type=application%2Foctet-stream&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=852af3549a421613746f7c16fc8699f5%2F20260501%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260501T112010Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=1d4ccd3069e9e019fc003164d8d5b44598a1e43fca5be358c67f98a5920a59e1",
+      "duration": 4.0,
+      "aspect_ratio": "16:9",
+      "resolution": "720p",
+      "grok_mode": null,
+      "seedance_mode": null,
+      "last_frame": "last_frames/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775_last_frame.jpg",
+      "status": 2,
+      "error_message": null,
+      "has_watermark": 0,
+      "file_download_url": "https://user-files-downloader.geminigen.ai/1512620/generated_result/video/804d2224-454f-11f1-b6c4-3e28e65f0775/20260501_111839_0_UTC_0.mp4",
+      "thumbnails": [
+        {
+          "id": 30261026,
+          "uuid": "a7ea1e2c-454f-11f1-8eb4-6e91f41efcea",
+          "size": "large",
+          "uri": "thumbnails/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775/804d2224-454f-11f1-b6c4-3e28e65f0775_0_600px.jpg",
+          "url": "https://cdn.geminigen.ai/thumbnails/1512620/804d2224-454f-11f1-b6c4-3e28e65f0775/804d2224-454f-11f1-b6c4-3e28e65f0775_0_600px.jpg"
+        }
+      ]
+    }
+  ],
+  "generated_image": [],
+  "generated_audio": [],
+  "reference_item": []
+}
