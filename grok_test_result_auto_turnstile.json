@@ -1,0 +1,66 @@
+{
+  "id": 38727394,
+  "uuid": "1ae1cd44-4546-11f1-9e24-d28eaec8b20e",
+  "user_id": 1512620,
+  "model_name": "grok-video",
+  "input_text": "A cinematic night city street with soft rain, realistic style",
+  "negative_prompt": null,
+  "generate_result": null,
+  "input_file_path": null,
+  "type": "video",
+  "used_credit": 0,
+  "status": 2,
+  "status_desc": "",
+  "status_percentage": 100,
+  "error_code": "",
+  "error_message": "",
+  "rating": "",
+  "rating_content": "",
+  "custom_prompt": "",
+  "created_at": "2026-05-01T10:11:22",
+  "updated_at": "2026-05-01T10:12:13",
+  "file_size": 0,
+  "expired_at": null,
+  "inference_type": null,
+  "name": null,
+  "created_by": "WEB",
+  "thumbnail_url": "https://cdn.geminigen.ai/thumbnails/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_1_600px.jpg",
+  "thumbnail_urls": [
+    "https://cdn.geminigen.ai/thumbnails/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_1_600px.jpg"
+  ],
+  "last_frame_url": "https://cdn.geminigen.ai/last_frames/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_last_frame.jpg",
+  "queue_position": 1,
+  "delay_seconds": 0,
+  "story_board_config": null,
+  "generated_video": [
+    {
+      "id": 30478718,
+      "uuid": "1b027256-4546-11f1-9e24-d28eaec8b20e",
+      "history_id": 38727394,
+      "video_uri": "1512620/generated_result/video/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/20260501_101205_UTC_0.mp4",
+      "video_url": "https://87c129bea46e5e69d2d92f9b9ef83ca8.r2.cloudflarestorage.com/geminigen-prd-upload-bucket/1512620/generated_result/video/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/20260501_101205_UTC_0.mp4?response-content-type=application%2Foctet-stream&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=852af3549a421613746f7c16fc8699f5%2F20260501%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20260501T101220Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=ec5db635ab9ec3625f4083969695e52c73e9d8cb27e4ec3b66d5261e160c0814",
+      "duration": 6.0,
+      "aspect_ratio": "landscape",
+      "resolution": "480p",
+      "grok_mode": "custom",
+      "seedance_mode": null,
+      "last_frame": "last_frames/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_last_frame.jpg",
+      "status": 2,
+      "error_message": null,
+      "has_watermark": null,
+      "file_download_url": "https://user-files-downloader.geminigen.ai/1512620/generated_result/video/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/20260501_101205_UTC_0.mp4",
+      "thumbnails": [
+        {
+          "id": 30234780,
+          "uuid": "37ece31a-4546-11f1-a31f-d28eaec8b20e",
+          "size": "large",
+          "uri": "thumbnails/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_1_600px.jpg",
+          "url": "https://cdn.geminigen.ai/thumbnails/1512620/1ae1cd44-4546-11f1-9e24-d28eaec8b20e/1ae1cd44-4546-11f1-9e24-d28eaec8b20e_1_600px.jpg"
+        }
+      ]
+    }
+  ],
+  "generated_image": [],
+  "generated_audio": [],
+  "reference_item": []
+}

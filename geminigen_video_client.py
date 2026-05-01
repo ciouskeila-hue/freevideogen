@@ -29,6 +29,7 @@ except Exception:
 
 SITE_ORIGIN = "https://geminigen.ai"
 API_BASE_URL = "https://api.geminigen.ai/api"
+UAPI_BASE_URL = "https://api.geminigen.ai/uapi/v1"
 HEALTH_URL = "https://api.geminigen.ai/health"
 ANTI_BOT_SECRET_SALT = "&vTQm0&u"
 ANTI_BOT_SECRET_KEY = "45NPBH$&"
@@ -51,6 +52,18 @@ USER_AGENT = (
 
 class GeminiGenError(RuntimeError):
     pass
+
+
+VEO_MODELS = {"veo-2", "veo-3", "veo-3-fast"}
+VEO_ASPECT_RATIO_MAP = {
+    "landscape": "16:9",
+    "portrait": "9:16",
+    "16:9": "16:9",
+    "9:16": "9:16",
+}
+RESOLUTION_ALIAS_MAP = {
+    "c20p": "720p",
+}
 
 
 @dataclass
@@ -367,17 +380,17 @@ class GeminiGenClient:
         if not chrome_binary:
             raise GeminiGenError("找不到本机 Chrome，请先安装 Google Chrome。")
 
-        options = uc.ChromeOptions()
-        options.binary_location = str(chrome_binary)
-        options.add_argument("--disable-popup-blocking")
-        options.add_argument("--disable-notifications")
-        options.add_argument("--disable-background-timer-throttling")
-        options.add_argument("--disable-renderer-backgrounding")
         major = chrome_major_version(chrome_binary)
         last_error = "unknown error"
         for attempt in range(1, max_attempts + 1):
             driver = None
             try:
+                options = uc.ChromeOptions()
+                options.binary_location = str(chrome_binary)
+                options.add_argument("--disable-popup-blocking")
+                options.add_argument("--disable-notifications")
+                options.add_argument("--disable-background-timer-throttling")
+                options.add_argument("--disable-renderer-backgrounding")
                 kwargs: dict[str, Any] = {
                     "options": options,
                     "use_subprocess": True,
@@ -590,6 +603,139 @@ return {
                 raise GeminiGenError(f"Timed out waiting for history {uuid} to complete")
             time.sleep(interval_seconds)
 
+    def normalize_veo_aspect_ratio(self, aspect_ratio: str) -> str:
+        normalized = VEO_ASPECT_RATIO_MAP.get(aspect_ratio)
+        if normalized:
+            return normalized
+        raise GeminiGenError(
+            "Veo 仅支持 16:9 或 9:16。你可以传 --aspect-ratio 16:9、9:16、landscape 或 portrait。"
+        )
+
+    def normalize_resolution(self, resolution: str) -> str:
+        value = (resolution or "").strip().lower()
+        if value in RESOLUTION_ALIAS_MAP:
+            return RESOLUTION_ALIAS_MAP[value]
+        return value or resolution
+
+    def generate_veo_video(
+        self,
+        *,
+        prompt: str,
+        model: str,
+        aspect_ratio: str,
+        resolution: str,
+        duration: int,
+        mode: str | None = None,
+        file_paths: list[Path] | None = None,
+        poll_interval: int = 30,
+        timeout_seconds: int = 300,
+        include_turnstile: bool = False,
+        auto_turnstile: bool = True,
+        _turnstile_retry: bool = False,
+    ) -> dict[str, Any]:
+        self.ensure_fresh_access_token()
+        if model not in VEO_MODELS:
+            raise GeminiGenError(f"不支持的 Veo 模型：{model}")
+
+        normalized_aspect_ratio = self.normalize_veo_aspect_ratio(aspect_ratio)
+        normalized_resolution = self.normalize_resolution(resolution)
+        files: list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]] = []
+        opened_files: list[Any] = []
+        try:
+            files.append(("prompt", (None, prompt)))
+            files.append(("model", (None, model)))
+            files.append(("resolution", (None, normalized_resolution)))
+            files.append(("aspect_ratio", (None, normalized_aspect_ratio)))
+            files.append(("duration", (None, str(duration))))
+            if mode:
+                files.append(("service_mode", (None, mode)))
+            if include_turnstile and self.auth.turnstile_token:
+                files.append(("turnstile_token", (None, self.auth.turnstile_token)))
+            for path in file_paths or []:
+                handle = path.open("rb")
+                opened_files.append(handle)
+                mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+                files.append(("ref_images", (path.name, handle, mime_type)))
+
+            headers = self.build_headers("/api/video-gen/veo", "post")
+            headers["Accept"] = "application/json"
+            response = self.session.post(
+                f"{API_BASE_URL}/video-gen/veo",
+                headers=headers,
+                files=files,
+                timeout=(120, timeout_seconds),
+            )
+            if response.status_code in {401, 403}:
+                self.refresh_access_token()
+                return self.generate_veo_video(
+                    prompt=prompt,
+                    model=model,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    duration=duration,
+                    mode=mode,
+                    file_paths=file_paths,
+                    poll_interval=poll_interval,
+                    timeout_seconds=timeout_seconds,
+                    include_turnstile=include_turnstile,
+                    auto_turnstile=auto_turnstile,
+                    _turnstile_retry=_turnstile_retry,
+                )
+            raw_text = response.text or ""
+            try:
+                payload = response.json() if raw_text else None
+            except json.JSONDecodeError:
+                payload = raw_text
+
+            if response.status_code < 200 or response.status_code >= 300:
+                response_text_upper = raw_text.upper()
+                if (
+                    response.status_code == 400
+                    and auto_turnstile
+                    and not _turnstile_retry
+                    and (
+                        "TURNSTILE_REQUIRED" in response_text_upper
+                        or "TURNSTILE_INVALID" in response_text_upper
+                    )
+                ):
+                    self.fetch_turnstile_token()
+                    return self.generate_veo_video(
+                        prompt=prompt,
+                        model=model,
+                        aspect_ratio=aspect_ratio,
+                        resolution=resolution,
+                        duration=duration,
+                        mode=mode,
+                        file_paths=file_paths,
+                        poll_interval=poll_interval,
+                        timeout_seconds=timeout_seconds,
+                        include_turnstile=True,
+                        auto_turnstile=auto_turnstile,
+                        _turnstile_retry=True,
+                    )
+                if isinstance(payload, dict):
+                    detail = payload.get("detail")
+                    if isinstance(detail, dict) and detail.get("error_message"):
+                        raise GeminiGenError(str(detail["error_message"]))
+                    for key in ("error_message", "message"):
+                        value = payload.get(key)
+                        if isinstance(value, str) and value:
+                            raise GeminiGenError(value)
+                raise GeminiGenError(f"video-gen/veo failed: {response.status_code} {raw_text}")
+
+            if isinstance(payload, dict):
+                if payload.get("uuid"):
+                    return self.poll_history_until_done(
+                        payload["uuid"],
+                        interval_seconds=poll_interval,
+                        timeout_seconds=timeout_seconds,
+                    )
+                return payload
+            return {"raw": payload}
+        finally:
+            for handle in opened_files:
+                handle.close()
+
     def generate_grok_video(
         self,
         *,
@@ -608,13 +754,14 @@ return {
         _turnstile_retry: bool = False,
     ) -> dict[str, Any]:
         self.ensure_fresh_access_token()
+        normalized_resolution = self.normalize_resolution(resolution)
         files: list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]] = []
         opened_files: list[Any] = []
         try:
             files.append(("prompt", (None, prompt)))
             files.append(("model", (None, model)))
             files.append(("aspect_ratio", (None, aspect_ratio)))
-            files.append(("resolution", (None, resolution)))
+            files.append(("resolution", (None, normalized_resolution)))
             files.append(("duration", (None, str(duration))))
             if mode:
                 files.append(("mode", (None, mode)))
@@ -635,7 +782,7 @@ return {
                 headers=headers,
                 files=files,
                 stream=True,
-                timeout=(30, timeout_seconds),
+                timeout=(120, timeout_seconds),
             )
             if response.status_code in {401, 403}:
                 self.refresh_access_token()
@@ -772,9 +919,10 @@ def build_parser() -> argparse.ArgumentParser:
     generate = subparsers.add_parser("generate", help="生成视频")
     generate.add_argument("--prompt", required=True, help="视频提示词")
     generate.add_argument("--model", default="grok-video", help="视频模型，默认：grok-video")
+    generate.add_argument("--api-key", help="可选 API Key（当前 Veo 默认走登录态 token 流程，此参数暂不必填）")
     generate.add_argument("--aspect-ratio", default="landscape", help="画面比例/方向，默认：landscape")
-    generate.add_argument("--resolution", default="480p", help="分辨率，默认：480p")
-    generate.add_argument("--duration", type=int, default=6, help="视频时长秒数，默认：6")
+    generate.add_argument("--resolution", default="720p", help="分辨率，默认：720p（兼容别名：c20p=720p）")
+    generate.add_argument("--duration", type=int, default=8, help="视频时长秒数，默认：8")
     generate.add_argument("--mode", help="可选模式，例如 ALLOW_ALL")
     generate.add_argument("--first-frame", type=Path, help="可选首帧图片路径，会作为第一个参考文件上传")
     generate.add_argument("--file", dest="files", action="append", type=Path, default=[], help="可选参考文件路径，可重复传入")
@@ -829,20 +977,35 @@ def main() -> int:
             file_paths = list(args.files)
             if args.first_frame:
                 file_paths.insert(0, args.first_frame)
-            result = client.generate_grok_video(
-                prompt=args.prompt,
-                model=args.model,
-                aspect_ratio=args.aspect_ratio,
-                resolution=args.resolution,
-                duration=args.duration,
-                mode=args.mode,
-                file_paths=file_paths,
-                ref_history=args.ref_history,
-                include_turnstile=args.include_turnstile,
-                poll_interval=args.poll_interval,
-                timeout_seconds=args.timeout,
-                auto_turnstile=not args.no_auto_turnstile,
-            )
+            if args.model in VEO_MODELS:
+                result = client.generate_veo_video(
+                    prompt=args.prompt,
+                    model=args.model,
+                    aspect_ratio=args.aspect_ratio,
+                    resolution=args.resolution,
+                    duration=args.duration,
+                    mode=args.mode,
+                    file_paths=file_paths,
+                    poll_interval=args.poll_interval,
+                    timeout_seconds=args.timeout,
+                    include_turnstile=args.include_turnstile,
+                    auto_turnstile=not args.no_auto_turnstile,
+                )
+            else:
+                result = client.generate_grok_video(
+                    prompt=args.prompt,
+                    model=args.model,
+                    aspect_ratio=args.aspect_ratio,
+                    resolution=args.resolution,
+                    duration=args.duration,
+                    mode=args.mode,
+                    file_paths=file_paths,
+                    ref_history=args.ref_history,
+                    include_turnstile=args.include_turnstile,
+                    poll_interval=args.poll_interval,
+                    timeout_seconds=args.timeout,
+                    auto_turnstile=not args.no_auto_turnstile,
+                )
             save_auth_state(args.session_cache, client.auth)
             args.out_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
             print_json(result)
