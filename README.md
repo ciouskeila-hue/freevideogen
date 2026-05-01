@@ -70,27 +70,6 @@ python geminigen_video_client.py generate `
 python geminigen_video_client.py generate --prompt "让这张图动起来" --first-frame image.jpg --download output.mp4
 ```
 
-## Veo 参考图片会员绕过
-
-Veo 生成视频时如果上传参考图片，默认会提示需要会员。脚本通过逆向分析发现，将上传字段从 `ref_images` 切换为 `files` 即可绕过此限制。
-
-只需在生成时添加 `--bypass-ref-premium` 参数：
-
-```powershell
-python geminigen_video_client.py generate `
-  --model veo-3-fast `
-  --prompt "一只猫在草地上走" `
-  --first-frame cat.jpg `
-  --bypass-ref-premium `
-  --download output.mp4
-```
-
-脚本会自动完成以下流程：
-1. 先用 `ref_images` 尝试提交，若服务器返回会员限制
-2. 自动切换为 `files` 字段重试
-3. 若 Turnstile 令牌失效，自动重新获取后继续重试
-4. 轮询直到视频生成完成
-
 ## 其他命令
 
 查看当前登录状态：

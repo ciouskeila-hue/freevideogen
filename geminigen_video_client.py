@@ -54,7 +54,7 @@ class GeminiGenError(RuntimeError):
     pass
 
 
-VEO_MODELS = {"veo-2", "veo-3", "veo-3-fast", "veo-3.1-lite"}
+VEO_MODELS = {"veo-2", "veo-3", "veo-3-fast"}
 VEO_ASPECT_RATIO_MAP = {
     "landscape": "16:9",
     "portrait": "9:16",
@@ -617,58 +617,6 @@ return {
             return RESOLUTION_ALIAS_MAP[value]
         return value or resolution
 
-    def _build_veo_files(
-        self,
-        *,
-        prompt: str,
-        model: str,
-        aspect_ratio: str,
-        resolution: str,
-        duration: int,
-        mode: str | None = None,
-        file_paths: list[Path] | None = None,
-        image_field: str = "ref_images",
-        include_turnstile: bool = False,
-    ) -> tuple[list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]], list[Any]]:
-        files: list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]] = []
-        opened_files: list[Any] = []
-        files.append(("prompt", (None, prompt)))
-        files.append(("model", (None, model)))
-        files.append(("resolution", (None, resolution)))
-        files.append(("aspect_ratio", (None, aspect_ratio)))
-        files.append(("duration", (None, str(duration))))
-        if mode:
-            files.append(("service_mode", (None, mode)))
-        if include_turnstile and self.auth.turnstile_token:
-            files.append(("turnstile_token", (None, self.auth.turnstile_token)))
-        for path in file_paths or []:
-            handle = path.open("rb")
-            opened_files.append(handle)
-            mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            files.append((image_field, (path.name, handle, mime_type)))
-        return files, opened_files
-
-    def _post_veo(
-        self,
-        *,
-        files: list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]],
-        headers: dict[str, str],
-        url: str,
-        timeout_seconds: int = 300,
-    ) -> tuple[requests.Response, str, Any]:
-        response = self.session.post(
-            url,
-            headers=headers,
-            files=files,
-            timeout=(120, timeout_seconds),
-        )
-        raw_text = response.text or ""
-        try:
-            payload = response.json() if raw_text else None
-        except json.JSONDecodeError:
-            payload = raw_text
-        return response, raw_text, payload
-
     def generate_veo_video(
         self,
         *,
@@ -684,54 +632,40 @@ return {
         include_turnstile: bool = False,
         auto_turnstile: bool = True,
         _turnstile_retry: bool = False,
-        api_key: str | None = None,
-        bypass_ref_premium: bool = False,
-        _bypass_retry: int = 0,
     ) -> dict[str, Any]:
+        self.ensure_fresh_access_token()
         if model not in VEO_MODELS:
             raise GeminiGenError(f"不支持的 Veo 模型：{model}")
 
         normalized_aspect_ratio = self.normalize_veo_aspect_ratio(aspect_ratio)
         normalized_resolution = self.normalize_resolution(resolution)
+        files: list[tuple[str, tuple[Any, Any, str] | tuple[None, str]]] = []
+        opened_files: list[Any] = []
+        try:
+            files.append(("prompt", (None, prompt)))
+            files.append(("model", (None, model)))
+            files.append(("resolution", (None, normalized_resolution)))
+            files.append(("aspect_ratio", (None, normalized_aspect_ratio)))
+            files.append(("duration", (None, str(duration))))
+            if mode:
+                files.append(("service_mode", (None, mode)))
+            if include_turnstile and self.auth.turnstile_token:
+                files.append(("turnstile_token", (None, self.auth.turnstile_token)))
+            for path in file_paths or []:
+                handle = path.open("rb")
+                opened_files.append(handle)
+                mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+                files.append(("ref_images", (path.name, handle, mime_type)))
 
-        # Determine endpoint and headers
-        if api_key:
-            url = f"{UAPI_BASE_URL}/video-gen/veo"
-            headers = {
-                "x-api-key": api_key,
-                "Accept": "application/json",
-            }
-            image_field = "files"
-        else:
-            self.ensure_fresh_access_token()
-            url = f"{API_BASE_URL}/video-gen/veo"
             headers = self.build_headers("/api/video-gen/veo", "post")
             headers["Accept"] = "application/json"
-            # Bypass strategy: try alternative field names
-            bypass_fields = ["ref_images", "files", "mode_image"]
-            image_field = bypass_fields[min(_bypass_retry, len(bypass_fields) - 1)]
-
-        files, opened_files = self._build_veo_files(
-            prompt=prompt,
-            model=model,
-            aspect_ratio=normalized_aspect_ratio,
-            resolution=normalized_resolution,
-            duration=duration,
-            mode=mode,
-            file_paths=file_paths,
-            image_field=image_field,
-            include_turnstile=include_turnstile,
-        )
-        try:
-            response, raw_text, payload = self._post_veo(
-                files=files,
+            response = self.session.post(
+                f"{API_BASE_URL}/video-gen/veo",
                 headers=headers,
-                url=url,
-                timeout_seconds=timeout_seconds,
+                files=files,
+                timeout=(120, timeout_seconds),
             )
-
-            # Token refresh for web endpoint
-            if not api_key and response.status_code in {401, 403}:
+            if response.status_code in {401, 403}:
                 self.refresh_access_token()
                 return self.generate_veo_video(
                     prompt=prompt,
@@ -746,15 +680,15 @@ return {
                     include_turnstile=include_turnstile,
                     auto_turnstile=auto_turnstile,
                     _turnstile_retry=_turnstile_retry,
-                    api_key=api_key,
-                    bypass_ref_premium=bypass_ref_premium,
-                    _bypass_retry=_bypass_retry,
                 )
+            raw_text = response.text or ""
+            try:
+                payload = response.json() if raw_text else None
+            except json.JSONDecodeError:
+                payload = raw_text
 
             if response.status_code < 200 or response.status_code >= 300:
                 response_text_upper = raw_text.upper()
-
-                # Turnstile retry
                 if (
                     response.status_code == 400
                     and auto_turnstile
@@ -762,7 +696,6 @@ return {
                     and (
                         "TURNSTILE_REQUIRED" in response_text_upper
                         or "TURNSTILE_INVALID" in response_text_upper
-                        or "INVALID CAPTCHA TOKEN" in response_text_upper
                     )
                 ):
                     self.fetch_turnstile_token()
@@ -779,38 +712,7 @@ return {
                         include_turnstile=True,
                         auto_turnstile=auto_turnstile,
                         _turnstile_retry=True,
-                        api_key=api_key,
-                        bypass_ref_premium=bypass_ref_premium,
-                        _bypass_retry=_bypass_retry,
                     )
-
-                # Bypass retry: if premium required and we have image files, try next field name
-                if (
-                    "VEO_PREMIUM_PLAN_REQUIRED" in response_text_upper
-                    and bypass_ref_premium
-                    and file_paths
-                    and not api_key
-                    and _bypass_retry < 2
-                ):
-                    print(f"[!] 检测到 VEO_PREMIUM_PLAN_REQUIRED (字段 {image_field})，尝试绕过: 切换到 {['ref_images','files','mode_image'][min(_bypass_retry+1,2)]}")
-                    return self.generate_veo_video(
-                        prompt=prompt,
-                        model=model,
-                        aspect_ratio=aspect_ratio,
-                        resolution=resolution,
-                        duration=duration,
-                        mode=mode,
-                        file_paths=file_paths,
-                        poll_interval=poll_interval,
-                        timeout_seconds=timeout_seconds,
-                        include_turnstile=include_turnstile,
-                        auto_turnstile=auto_turnstile,
-                        _turnstile_retry=False,
-                        api_key=api_key,
-                        bypass_ref_premium=bypass_ref_premium,
-                        _bypass_retry=_bypass_retry + 1,
-                    )
-
                 if isinstance(payload, dict):
                     detail = payload.get("detail")
                     if isinstance(detail, dict) and detail.get("error_message"):
@@ -1017,8 +919,7 @@ def build_parser() -> argparse.ArgumentParser:
     generate = subparsers.add_parser("generate", help="生成视频")
     generate.add_argument("--prompt", required=True, help="视频提示词")
     generate.add_argument("--model", default="grok-video", help="视频模型，默认：grok-video")
-    generate.add_argument("--api-key", help="可选 API Key；若传入，Veo 将走 /uapi/v1/video-gen/veo 端点（表单字段为 files），可绕过登录态限制")
-    generate.add_argument("--bypass-ref-premium", action="store_true", help="尝试绕过 Veo 参考图片的会员限制：自动依次替换 ref_images -> files -> mode_image")
+    generate.add_argument("--api-key", help="可选 API Key（当前 Veo 默认走登录态 token 流程，此参数暂不必填）")
     generate.add_argument("--aspect-ratio", default="landscape", help="画面比例/方向，默认：landscape")
     generate.add_argument("--resolution", default="720p", help="分辨率，默认：720p（兼容别名：c20p=720p）")
     generate.add_argument("--duration", type=int, default=8, help="视频时长秒数，默认：8")
@@ -1089,8 +990,6 @@ def main() -> int:
                     timeout_seconds=args.timeout,
                     include_turnstile=args.include_turnstile,
                     auto_turnstile=not args.no_auto_turnstile,
-                    api_key=args.api_key,
-                    bypass_ref_premium=args.bypass_ref_premium,
                 )
             else:
                 result = client.generate_grok_video(
