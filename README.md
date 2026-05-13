@@ -64,7 +64,7 @@ python geminigen_video_client.py generate `
   --download output.mp4
 ```
 
-使用首帧图片：
+使用首帧图片（暂不支持）：
 
 ```powershell
 python geminigen_video_client.py generate --prompt "让这张图动起来" --first-frame image.jpg --download output.mp4
